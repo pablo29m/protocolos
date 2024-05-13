@@ -13,10 +13,14 @@ meses = {
 # Lista para mantener las conexiones activas
 conexiones_activas = []
 sock = None
-cerrando = False
+manejando_interrupcion = False
 
 def manejar_interrupcion(signal, frame):
-    global cerrando
+    global manejando_interrupcion
+    if manejando_interrupcion:
+        return
+    manejando_interrupcion = True
+
     print("\nSe ha detectado una interrupción. ¿Qué acción deseas tomar?")
     print("1. Cerrar solo el socket del servidor.")
     print("2. Cerrar todas las conexiones activas y luego cerrar el socket del servidor.")
@@ -29,12 +33,12 @@ def manejar_interrupcion(signal, frame):
     elif opcion == "2":
         cerrar_conexiones()
         cerrar_socket()
-        cerrando = True
         print("Saliendo del programa.")
         sys.exit(0)
     else:
         print("Saliendo sin cerrar nada.")
         sys.exit(0)
+    manejando_interrupcion = False
 
 def cerrar_socket():
     global sock
@@ -69,36 +73,41 @@ def proceso_hijo(conn, addr):
     formatted_time = inicio_conexion.strftime("%H:%M")  # Formato de la hora
     friendly_date_time = f"{inicio_conexion.day} de {month_name} a las {formatted_time} hs"
 
-    # Enviar el mensaje de bienvenida junto con la fecha y hora de conexión
+    # Send the welcome message along with the date and time of connection
     mensaje_bienvenida = f"Servidor: Conexión establecida el {friendly_date_time}. Puedes enviar mensajes al servidor.\n"
     conn.send(mensaje_bienvenida.encode('UTF-8'))
 
-    while True:
+    cliente_desconectado = False
+
+    while not cliente_desconectado:
         lista_para_leer, _, _ = select.select([conn], [], [], 0.1)
         for s in lista_para_leer:
             data = s.recv(1024).decode('utf-8')
             if not data:
                 print('Cliente {}:{} se desconectó.'.format(addr[0], addr[1]))
+                cliente_desconectado = True
                 break
             if data.lower() == 'salir':
                 print('Cliente {}:{} ha cerrado la conexión.'.format(addr[0], addr[1]))
-                return  # Salir del bucle y terminar el proceso hijo
+                cliente_desconectado = True
+                break  # Exit the loop and terminate the child process
 
-            if cerrando==False:
+            if manejando_interrupcion==False:
                 print('Mensaje recibido de {}:{}: {}'.format(addr[0], addr[1], data))
 
-            # Calcular la cantidad de tiempo transcurrido desde el inicio de la conexión
+            # Calculate the amount of time elapsed since the start of the connection
             tiempo_transcurrido = datetime.now() - inicio_conexion
             tiempo_transcurrido_formateado = str(tiempo_transcurrido)
 
-            # Enviar el mensaje recibido junto con la cantidad de tiempo transcurrido
+            # Send the received message along with the amount of time elapsed
             mensaje_respuesta = f"Mensaje Recibido el {friendly_date_time}. Tiempo transcurrido desde la conexión: {tiempo_transcurrido_formateado}\n"
             try:
                 conn.send(mensaje_respuesta.encode('UTF-8'))
             except OSError:
+                cliente_desconectado = True
                 break
 
-    # Eliminar la conexión activa de la lista
+    # Remove the active connection from the list
     try:
         conexiones_activas.remove(conn)
     except ValueError:
@@ -110,6 +119,7 @@ host = "127.0.0.1"
 port = 6667
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 print("Socket creado")
 sock.bind((host, port))
 print("Enlace del socket completado")

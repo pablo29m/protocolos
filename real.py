@@ -13,10 +13,14 @@ meses = {
 # Lista para mantener las conexiones activas
 conexiones_activas = []
 sock = None
-cerrando = False
+manejando_interrupcion = False
 
 def manejar_interrupcion(signal, frame):
-    global cerrando
+    global manejando_interrupcion
+    if manejando_interrupcion:
+        return
+    manejando_interrupcion = True
+
     print("\nSe ha detectado una interrupción. ¿Qué acción deseas tomar?")
     print("1. Cerrar solo el socket del servidor.")
     print("2. Cerrar todas las conexiones activas y luego cerrar el socket del servidor.")
@@ -29,12 +33,12 @@ def manejar_interrupcion(signal, frame):
     elif opcion == "2":
         cerrar_conexiones()
         cerrar_socket()
-        cerrando = True
         print("Saliendo del programa.")
         sys.exit(0)
     else:
         print("Saliendo sin cerrar nada.")
         sys.exit(0)
+    manejando_interrupcion = False
 
 def cerrar_socket():
     global sock
@@ -78,7 +82,7 @@ def proceso_hijo(conn, addr):
         if not data:
             print('Cliente {}:{} se desconectó.'.format(addr[0], addr[1]))
             break
-        if cerrando==False:
+        if manejando_interrupcion==False:
             print('Mensaje recibido de {}:{}: {}'.format(addr[0], addr[1], data))
 
 
@@ -105,6 +109,7 @@ host = "127.0.0.1"
 port = 6667
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 print("Socket creado")
 sock.bind((host, port))
 print("Enlace del socket completado")
